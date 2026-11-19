@@ -244,6 +244,8 @@ p{margin:0}
 .t-key{font-family:var(--f-ar);font-size:1rem;line-height:1;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 9px;color:var(--ink)}
 .t-key:hover{border-color:var(--gold);background:var(--gold-soft)}
 .t-key-back{font-family:inherit;color:var(--muted)}
+.t-key-shift{font-family:inherit;color:var(--muted)}
+.t-key-shift[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-soft);color:var(--ink)}
 .t-row.done .t-form{font-family:var(--f-ar);font-size:1.2rem;direction:rtl;color:var(--muted)}
 .t-row.done.ok .t-form{color:var(--green)}
 .t-row.done.bad .t-form{color:var(--red)}
@@ -1385,8 +1387,11 @@ function buildTableSteps(cells){
 
 // Konjugationstabellen für Typ-2-Übungen. TABLES[topicId] = Array<VerbTabelle>.
 // VerbTabelle: {verb (Anzeige-Label), tense:'madi'|'mudari'|'amr' (nur Anzeige, keine Logik hängt daran),
-// de (Tabellen-Überschrift, Deutsch), cells:[{group, gender, num, pronoun, form}, ...] (unsortiert erlaubt,
-// buildTableSteps() sortiert)}.
+// de (Tabellen-Überschrift, Deutsch), cells:[{group, gender, num, pronoun, form, given?}, ...] (unsortiert
+// erlaubt, buildTableSteps() sortiert). given:true (optional, siehe b2-l30) zeigt die Zelle sofort
+// unbeantwortbar an (schon in einer früheren Lektion gelernte Form, hier nur zum Einordnen der neuen
+// Zellen im vollen klassischen Paradigma) - makeTable() nimmt solche Zellen aus m.order heraus, sodass
+// nur die restlichen Zellen je abgefragt/gezählt werden.
 const TABLES = {
 // form wird MIT Taschkīl gepflegt: ohne die Vokalzeichen sehen vier der zehn Formen (هي/أنتَ/أنتِ/أنا)
 // identisch aus (ذهبت), obwohl sie grammatisch verschieden sind - die fertige Tabelle soll das Paradigma
@@ -1602,10 +1607,25 @@ const TABLES = {
  ]}
 ],
 'b2-l30':[
+ // Ridouane (2026-11-19): isoliert sahen die zwei "هما"-Zeilen (m./f.) wie eine Doppelabfrage derselben
+ // Sache aus - die 10 Zellen hier sind wörtlich dieselben Formen wie TABLES['b2-l13'] (given:true, werden
+ // nur angezeigt, nicht erneut abgefragt), damit die 3 echten Dual-Zellen an ihrer klassischen Stelle im
+ // vollen Paradigma erscheinen und sichtbar wird, dass هما für beide Geschlechter dasselbe Pronomen ist,
+ // nur die Verbform sich unterscheidet.
  {verb:'ذهب', tense:'mudari', de:'gehen — Präsens (Dual)', cells:[
+   {group:'3', gender:'m', num:'sg', pronoun:'هو', form:'يَذْهَبُ', given:true},
    {group:'3', gender:'m', num:'du', pronoun:'هما', form:'يَذْهَبَانِ'},
+   {group:'3', gender:'m', num:'pl', pronoun:'هم', form:'يَذْهَبُونَ', given:true},
+   {group:'3', gender:'f', num:'sg', pronoun:'هي', form:'تَذْهَبُ', given:true},
    {group:'3', gender:'f', num:'du', pronoun:'هما', form:'تَذْهَبَانِ'},
-   {group:'2', gender:null, num:'du', pronoun:'أنتما', form:'تَذْهَبَانِ'}
+   {group:'3', gender:'f', num:'pl', pronoun:'هن', form:'يَذْهَبْنَ', given:true},
+   {group:'2', gender:'m', num:'sg', pronoun:'أنتَ', form:'تَذْهَبُ', given:true},
+   {group:'2', gender:null, num:'du', pronoun:'أنتما', form:'تَذْهَبَانِ'},
+   {group:'2', gender:'m', num:'pl', pronoun:'أنتم', form:'تَذْهَبُونَ', given:true},
+   {group:'2', gender:'f', num:'sg', pronoun:'أنتِ', form:'تَذْهَبِينَ', given:true},
+   {group:'2', gender:'f', num:'pl', pronoun:'أنتن', form:'تَذْهَبْنَ', given:true},
+   {group:'1', gender:null, num:'sg', pronoun:'أنا', form:'أَذْهَبُ', given:true},
+   {group:'1', gender:null, num:'pl', pronoun:'نحن', form:'نَذْهَبُ', given:true}
  ]}
 ]
 };
@@ -1623,13 +1643,18 @@ function makeTable(topicId, verbIndex){
   // Blase, die weder beantwortbar noch jemals done ist - und die damit (siehe ensureTutorTable()) das
   // Thema dauerhaft blockiert. Wie bei "gar keine cells" also null zurückgeben: Lektion überspringen.
   if (!steps.length) return null;
+  // given-Zellen (siehe TABLES-Schema-Kommentar oben, z. B. b2-l30) stehen schon fest und werden nie
+  // abgefragt - aus m.order ausgenommen, sonst dieselbe tote-Blase-Gefahr wie beim Steps-Check oben, nur
+  // falls eine Lektion ausschließlich given-Zellen hätte.
+  const order = steps.map((_, k) => k).filter(k => !steps[k].given);
+  if (!order.length) return null;
   return {
     role:'table',
     topicId, verbIndex,
     verb:entry.verb, tense:entry.tense, de:entry.de,
     steps,
     phase:1,
-    order:steps.map((_, k) => k),
+    order,
     pos:0,
     attempt:0,
     answers:{},
@@ -3297,15 +3322,28 @@ function diffMark(wrong, right){
 //   (ئ ء ؤ لاـ ى ة), die nicht im bisherigen Alphabet-Satz enthalten sind und hier bewusst
 //   nicht ergänzt wurden (dieselben 28 Buchstaben wie vorher, nur umsortiert):
 //   untere Reihe (V,./):     ر و ز ظ
-const ARABIC_LETTERS = ['ذ', 'ض', 'ص', 'ث', 'ق', 'ف', 'غ', 'ع', 'ه', 'خ', 'ح', 'ج', 'د', 'ش', 'س', 'ي', 'ب', 'ل', 'ا', 'ت', 'ن', 'م', 'ك', 'ط', 'ر', 'و', 'ز', 'ظ'];
+// Ridouane (2026-11-19): ة (Ta Marbuta) fehlte komplett, obwohl sie beim Schreiben ständig gebraucht wird
+// (z. B. jedes feminine Nomen) - bewusste Ausnahme von der 28er-Regel oben, ans Ende angehängt statt die
+// physische Tastaturreihenfolge umzubauen.
+const ARABIC_LETTERS = ['ذ', 'ض', 'ص', 'ث', 'ق', 'ف', 'غ', 'ع', 'ه', 'خ', 'ح', 'ج', 'د', 'ش', 'س', 'ي', 'ب', 'ل', 'ا', 'ت', 'ن', 'م', 'ك', 'ط', 'ر', 'و', 'ز', 'ظ', 'ة'];
+// Tashkil (Vokalzeichen über/unter dem Buchstaben) - über die Umschalt-Taste in arabicKeysHTML() erreichbar,
+// ersetzt dort die Buchstabentasten statt sie zu ergänzen. norm() ignoriert sie weiterhin beim Werten
+// (siehe TASHKEEL dort), sie sind rein fürs correkte Mitschreiben der Vokalisierung.
+const TASHKIL = ['َ', 'ً', 'ُ', 'ٌ', 'ِ', 'ٍ', 'ّ', 'ْ'];
 // Rendert die Eingabehilfe (Tastenreihe) für das aktive Tabellenzelle-Eingabefeld targetInputId:
-// eine Taste je Buchstabe plus eine Rücktaste. Siehe Click-Handler-Zweige d.keyInsert/d.keyBack unten,
-// die auf data-key-insert/data-key-target bzw. data-key-back reagieren.
-function arabicKeysHTML(targetInputId){
+// eine Taste je Buchstabe/Tashkil-Zeichen (je nach tashkil-Flag), eine Umschalt-Taste zwischen beiden
+// Sätzen und eine Rücktaste. Siehe Click-Handler-Zweige d.keyInsert/d.keyShift/d.keyBack unten, die auf
+// data-key-insert/data-key-target bzw. data-key-shift/data-key-back reagieren. data-tashkil am Wurzel-Div
+// hält den aktuellen Zustand, damit der Umschalt-Click ihn lesen und umkehren kann, ohne renderChat()
+// aufzurufen (das würde über das volle innerHTML-Replace in renderChat() eine bereits angefangene Eingabe
+// im Nachbar-<input> löschen, siehe tests/test_table_input_helper.py::test_shift_toggle_preserves...).
+function arabicKeysHTML(targetInputId, tashkil){
   const en = S.settings.lang === 'en';
-  const letterKeys = ARABIC_LETTERS.map(ch => '<button class="t-key" type="button" data-key-insert="' + ch + '" data-key-target="' + targetInputId + '">' + ch + '</button>').join('');
+  const set = tashkil ? TASHKIL : ARABIC_LETTERS;
+  const letterKeys = set.map(ch => '<button class="t-key" type="button" data-key-insert="' + ch + '" data-key-target="' + targetInputId + '">' + ch + '</button>').join('');
+  const shiftKey = '<button class="t-key t-key-shift" type="button" data-key-shift="' + targetInputId + '" aria-pressed="' + (tashkil ? 'true' : 'false') + '" aria-label="' + (en ? 'Toggle diacritics' : 'Vokalzeichen umschalten') + '">' + (tashkil ? 'ابت' : 'ـَـِـُ') + '</button>';
   const backKey = '<button class="t-key t-key-back" type="button" data-key-back="' + targetInputId + '" aria-label="' + (en ? 'Delete character' : 'Zeichen löschen') + '">⌫</button>';
-  return '<div class="t-keys" role="group" aria-label="' + (en ? 'Arabic keyboard' : 'Arabische Tastatur') + '">' + letterKeys + backKey + '</div>';
+  return '<div class="t-keys" role="group" data-tashkil="' + (tashkil ? '1' : '0') + '" aria-label="' + (en ? 'Arabic keyboard' : 'Arabische Tastatur') + '">' + letterKeys + shiftKey + backKey + '</div>';
 }
 function msgHTML(m, i, kind){
   const st = S.settings, en = st.lang === 'en';
@@ -3358,7 +3396,10 @@ function msgHTML(m, i, kind){
     const rows = m.steps.map((step, idx) => {
       const ans = m.answers[idx];
       let cls = '', cell;
-      if (ans){
+      if (step.given){
+        cls = ' done given';
+        cell = '<span class="t-form" lang="ar" dir="rtl">' + esc(step.form) + '</span>';
+      } else if (ans){
         cls = ' done' + (ans.correct ? ' ok' : ' bad');
         cell = '<span class="t-form" lang="ar" dir="rtl">' + esc(step.form) + '</span>';
       } else if (idx === activeIdx){
@@ -3366,11 +3407,11 @@ function msgHTML(m, i, kind){
         cell = '<input type="text" dir="rtl" lang="ar" inputmode="none" id="' + inputId + '">'
           + '<button class="btn small" type="button" data-table-submit data-qi="' + i + '" data-kind="' + kind + '">' + icon('i-check', 'ico sm') + '</button>'
           + (m.attempt === 1 ? '<span class="t-hint">' + (en ? 'Not quite — try again.' : 'Nicht ganz — versuch\'s noch mal.') + '</span>' : '')
-          + arabicKeysHTML(inputId);
+          + arabicKeysHTML(inputId, false);
       } else {
         cell = '<span class="t-form empty"></span>';
       }
-      const label = (idx === activeIdx && m.phase === 2) ? '<p class="t-phase2-label">' + (en ? 'Review, random order' : 'Wiederholung, zufällige Reihenfolge') + '</p>' : '';
+      const label = (idx === activeIdx && m.phase === 2) ? '<p class="t-phase2-label">' + (en ? 'Review, same order' : 'Wiederholung, gleiche Reihenfolge') + '</p>' : '';
       return label + '<div class="t-row' + cls + '"><span class="t-pro" lang="ar" dir="rtl">' + esc(step.pronoun) + '</span><span class="t-cell">' + cell + '</span></div>';
     }).join('');
     const doneTag = m.done ? '<p class="t-done"><span class="ok-tag">' + icon('i-check', 'ico sm') + (en ? 'Table completed' : 'Tabelle abgeschlossen') + '</span></p>' : '';
@@ -3432,7 +3473,7 @@ function msgHTML(m, i, kind){
             + '<input type="text" dir="rtl" lang="ar" inputmode="none" id="' + inputId + '">'
             + '<button class="btn small" type="button" data-deriv-submit data-mi="' + i + '" data-ri="' + rowIdx + '" data-ci="' + colIdx + '" data-kind="' + kind + '">' + icon('i-check', 'ico sm') + '</button>'
             + (m.attempt === 1 ? '<span class="dt-hint">' + (en ? 'Not quite — try again.' : 'Nicht ganz — versuch\'s noch mal.') + '</span>' : '')
-            + arabicKeysHTML(inputId)
+            + arabicKeysHTML(inputId, false)
             + '</div>';
           return '<span class="dt-cell active" lang="ar" dir="rtl"><span class="dt-active-marker"></span></span>';
         }
@@ -3699,7 +3740,13 @@ function submitTableCell(kind, mi, rawInput){
     if (m.pos === m.order.length){
       if (m.phase === 1){
         m.phase = 2;
-        m.order = shuffle(m.steps.map((_, k) => k));
+        // Ridouane (2026-11-19): bewusst NICHT mehr shuffle() wie bei Typ 3 (submitDerivTableCell unten) -
+        // die Personen-Reihenfolge soll gedrillt werden (klassisches Paradigma auswendig lernen), Phase 2
+        // wiederholt deshalb dieselbe klassische Reihenfolge aus buildTableSteps() statt sie zu mischen.
+        // given-Zellen (siehe makeTable()) bleiben auch hier ausgenommen - sonst bliebe m.pos auf einer
+        // Zelle stehen, die wegen step.given nie aktiv/eingebbar wird (b2-l30 wäre dann in Phase 2 nie
+        // fertig).
+        m.order = m.steps.map((_, k) => k).filter(k => !m.steps[k].given);
         m.pos = 0;
         m.answers = {}; // Phase 2 ist eine eigene Durchlauf-Zählung; alte Phase-1-Antworten dürfen
                          // Zellen in Phase 2 nicht fälschlich als "schon beantwortet" rendern.
@@ -4337,6 +4384,15 @@ document.addEventListener('click', e => {
   if (d.derivContinue !== undefined){ continueDerivTable(d.kind, Number(d.mi)); return; }
   if (d.keyInsert !== undefined){ const el = $('#' + d.keyTarget); el.value += d.keyInsert; el.focus(); return; }
   if (d.keyBack !== undefined){ const el = $('#' + d.keyBack); el.value = el.value.slice(0, -1); el.focus(); return; }
+  // Ersetzt nur die eigene .t-keys-Wurzel (per outerHTML), statt renderChat() aufzurufen - sonst würde das
+  // volle innerHTML-Replace in renderChat() eine bereits angefangene Eingabe im Nachbar-<input> löschen.
+  if (d.keyShift !== undefined){
+    const wrap = t.closest('.t-keys');
+    const tashkil = wrap.dataset.tashkil !== '1';
+    wrap.outerHTML = arabicKeysHTML(d.keyShift, tashkil);
+    $('#' + d.keyShift).focus();
+    return;
+  }
   if (d.mode){ setMode(d.mode); return; }
   if (d.trClaude !== undefined){ translate($('#tr-input').value, true); return; }
   if (d.insert){ const inp = $(d.insert); insertInto(inp, d.text); if (d.say && S.settings.autoSpeak) speak(d.text); return; }
